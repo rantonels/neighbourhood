@@ -1,0 +1,286 @@
+<html>
+	<head>
+		<title>My first Three.js app</title>
+		<style>
+			body { margin: 0; }
+			canvas { width: 100%; height: 100% }
+		</style>
+	</head>
+	<body>
+		<script type="x-shader/x-vertex" id="vertexshader">
+
+		    attribute float size;
+		    attribute vec3 colour;
+
+		    varying float vSize;
+		    varying vec3 vColour;		    
+
+		   varying float vAlpha;
+
+		    void main() {
+
+			vSize = size;
+			vColour = colour;
+
+			vec4 mvPosition = modelViewMatrix * vec4( position, 1.0 );
+
+
+			gl_Position = projectionMatrix * mvPosition;
+
+			float zz = gl_Position.z;
+
+			float logz = log(zz)/2.30258;			
+
+			//gl_PointSize = max(1.0,20.0*size / zz);
+			float m = size - 5.0 * (1.0 - logz);
+
+			float as = 10.0*exp(-0.46054 * m);
+
+			gl_PointSize = max(1.0,as);
+                        
+			vAlpha = min(1.0,as);
+
+		    }
+
+		</script>
+
+		<script type="x-shader/x-fragment" id="fragmentshader">
+
+		    uniform vec3 color;
+
+		    varying float vAlpha;
+		    varying vec3 vColour;
+
+		    void main() {
+
+			gl_FragColor = vec4( vColour, vAlpha );
+
+		    }
+
+		</script>
+		<script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r77/three.js"></script>
+		<script src="js/OrbitControls.js"></script>
+		<script
+			  src="https://code.jquery.com/jquery-2.2.4.js"
+			  integrity="sha256-iT6Q9iMJYuQiMWNd9lDyBUStIq/8PuOW33aOqmvFpqI="
+			  crossorigin="anonymous"></script>
+		<script>
+
+	function makeTextSprite (message, fontsize) {
+        var ctx, texture, sprite, spriteMaterial, 
+            canvas = document.createElement('canvas');
+        ctx = canvas.getContext('2d');
+        ctx.font = fontsize + "px Arial";
+
+        // setting canvas width/height before ctx draw, else canvas is empty
+        canvas.width = ctx.measureText(message).width;
+        canvas.height = fontsize * 2; // fontsize * 1.5
+
+        // after setting the canvas width/height we have to re-set font to apply!?! looks like ctx reset
+        ctx.font = fontsize + "px Arial";        
+        ctx.fillStyle = "rgba(255,255,255,1)";
+        ctx.fillText(message, 0, fontsize);
+
+        texture = new THREE.Texture(canvas);
+        texture.minFilter = THREE.LinearFilter; // NearestFilter;
+        texture.needsUpdate = true;
+
+        spriteMaterial = new THREE.SpriteMaterial({map : texture});
+        sprite = new THREE.Sprite(spriteMaterial);
+        return sprite;   
+    }
+
+
+		//spectral classes lookup table
+		var spect = {};
+		spect.O = [155,176,255];
+		spect.B = [170,191,255];  
+		spect.A = [202,215,255];  
+		spect.F = [248,247,255];  
+		spect.G = [255,244,234];  
+		spect.K = [255,210,161];  
+		spect.M = [255,204,111]; 
+
+
+			var scene = new THREE.Scene();
+			var clock = new THREE.Clock();
+
+			var labels = [];
+			
+
+
+			$.getJSON("catalog.json",function(json) {
+				console.log(json[0]);
+				var pg = new THREE.BufferGeometry();
+				var sizes = new Float32Array( json.length );
+
+				var vertices = new Float32Array(json.length * 3);
+				var colours = new Float32Array(json.length * 3);
+
+				for (var sid in json)
+				{
+					var s = json[sid];
+					var x = parseFloat(s["x"]);
+					var y = parseFloat(s["z"]);
+					var z = -parseFloat(s["y"]);
+					vertices[sid*3] = x;
+					vertices[sid*3+1] = y;
+					vertices[sid*3+2] = z;
+
+					var spectlect;
+					if (s["spect"].length > 0)
+					{
+						spectlect = s["spect"][0].toUpperCase();
+					}
+					else
+						spectlect = "";
+
+					var coll;
+					if (spectlect in spect)
+					{
+						coll = spect[spectlect];
+					}
+					else
+					{
+						coll = [0,255,0];
+						console.log(s["spect"]);
+					}
+
+					colours[sid*3] = coll[0]/255.0;
+					colours[sid*3+1] = coll[1]/255.0;
+					colours[sid*3+2] = coll[2]/255.;
+
+					//sizes[sid] = 0.1 * Math.pow(1.585,-parseFloat(s["absmag"]));
+					sizes[sid] = parseFloat(s["absmag"]);
+
+					//1.585 = sqrt(2.512) 
+
+					//var dist2 = x*x+y*y+z*z;
+					//var dist = Math.sqrt(dist2);
+
+					if (s["proper"].length > 1)
+					{
+						var tesText = makeTextSprite(s["proper"],20);
+						tesText.position.set(x,y+0.05,z);
+
+						scene.add(tesText);
+						labels.push(tesText);
+					};
+
+				};
+			
+
+				//var pMat = new THREE.PointsMaterial( {color:0xffffffff, size:0.04, sizeAttenuation:true} );
+
+				var shaderMaterial = new THREE.ShaderMaterial( {
+
+				uniforms:       {
+					color : { type: "c", value: new THREE.Color(0xffffff) }
+					},
+				vertexShader:   document.getElementById( 'vertexshader' ).textContent,
+				fragmentShader: document.getElementById( 'fragmentshader' ).textContent,
+				transparent: true
+
+				});
+
+				pg.addAttribute( 'size', new THREE.BufferAttribute(sizes,1));
+				pg.addAttribute( 'position', new THREE.BufferAttribute(vertices,3));
+				pg.addAttribute( 'colour', new THREE.BufferAttribute(colours,3));
+
+				var pp = new THREE.Points(pg,shaderMaterial);
+				
+				scene.add(pp);
+
+	//			pp.geometry.attributes.size = sizes;
+
+			});
+
+
+			var active_labels = true;
+			
+			function doKeyDown(e)
+			{
+				console.log("event");
+				if (e.keyCode == 76) {
+					for (lid in labels)
+					{
+						if (active_labels)
+							scene.remove(labels[lid]);
+						else
+							scene.add(labels[lid]);
+					}		
+					active_labels = ! active_labels;
+				}
+
+			};
+
+
+			var camera = new THREE.PerspectiveCamera( 75, window.innerWidth/window.innerHeight, 0.1, 1000 );
+
+			var renderer = new THREE.WebGLRenderer();
+			renderer.setSize( window.innerWidth, window.innerHeight );
+			document.body.appendChild( renderer.domElement );
+
+
+			window.addEventListener( "keydown", doKeyDown, true);
+
+			var geometry = new THREE.BoxGeometry( 1, 1, 1 );
+			var material = new THREE.MeshBasicMaterial( { color: 0x00ff00 } );
+			var cube = new THREE.Mesh( geometry, material );
+//			scene.add( cube );
+
+			//var pg = new THREE.Geometry();
+			//pg.vertices.push(new THREE.Vector3(0,0,0));
+			//var pMat = new THREE.PointsMaterial( {color:0xffffffff, size:4, sizeAttenuation:false} );
+			//var pp = new THREE.Points(pg,pMat);
+			//scene.add(pp);
+
+
+			//ecliptic
+			var circleG = new THREE.Geometry();
+			for (var i=0; i<2*Math.PI; i+= 0.1)
+			{
+			 circleG.vertices.push(new THREE.Vector3(1 * Math.cos(i), 0, 1 * Math.sin(i)));
+			}
+			circleG.vertices.push(new THREE.Vector3(1,0,0));
+
+			var circleM = new THREE.LineBasicMaterial( { color: 0x555555, linewidth: 3} );
+			var circle = new THREE.Line(circleG,circleM);
+			scene.add(circle);
+
+			camera.position.z = 5;
+			camera.position.y = 2;
+
+			var controls = new THREE.OrbitControls(camera,renderer.domElement);
+			controls.enableDamping = true;
+			controls.dampingFactor = 0.25;
+			controls.enableZoom = true;
+
+			var cangle = 0;
+
+			var render = function () {
+				var delta = clock.getDelta();
+				requestAnimationFrame( render );
+
+				cangle += 0.002;
+				//camera.position.z = 5 * (1+Math.cos(cangle)) * Math.cos(cangle);
+				//camera.position.x = 5 * Math.sin(cangle);
+				//camera.lookAt(new THREE.Vector3(0,0,0));
+				controls.update(delta);
+
+				for (lid in labels)
+				{
+					var l = labels[lid];
+					var dist = l.position.distanceTo(camera.position);
+					var scale = Math.max(1.0,dist)*0.06;
+					l.scale.set(scale,scale,scale);
+				};
+
+
+				renderer.render(scene, camera);
+			};
+
+			render();
+		</script>
+	</body>
+</html>
