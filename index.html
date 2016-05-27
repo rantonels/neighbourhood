@@ -34,7 +34,7 @@
 			//gl_PointSize = max(1.0,20.0*size / zz);
 			float m = size - 5.0 * (1.0 - logz);
 
-			float as = 10.0*exp(-0.46054 * m);
+			float as = 15.0*exp(-0.46054 * m);
 
 			gl_PointSize = max(1.0,as);
                         
@@ -87,6 +87,8 @@
 
         spriteMaterial = new THREE.SpriteMaterial({map : texture});
         sprite = new THREE.Sprite(spriteMaterial);
+
+	sprite.tr = canvas.width * 1.0 / canvas.height ;
         return sprite;   
     }
 
@@ -101,6 +103,7 @@
 		spect.K = [255,210,161];  
 		spect.M = [255,204,111]; 
 
+		var ecliptic_inclination = 0.40909278483;
 
 			var scene = new THREE.Scene();
 			var clock = new THREE.Clock();
@@ -120,9 +123,16 @@
 				for (var sid in json)
 				{
 					var s = json[sid];
-					var x = parseFloat(s["x"]);
-					var y = parseFloat(s["z"]);
-					var z = -parseFloat(s["y"]);
+					var tx = parseFloat(s["x"]);
+					var ty = parseFloat(s["z"]);
+					var tz = -parseFloat(s["y"]);
+
+					//ecliptic inclination
+					var cc = Math.cos(ecliptic_inclination); var ss = Math.sin(ecliptic_inclination);
+					var z = cc * tz - ss * ty;
+					var y = ss * tz + cc * ty; 
+					var x = tx;
+
 					vertices[sid*3] = x;
 					vertices[sid*3+1] = y;
 					vertices[sid*3+2] = z;
@@ -136,14 +146,22 @@
 						spectlect = "";
 
 					var coll;
+					
+					if (spectlect == "D")
+					{
+						spectlect = s["spect"][1].toUpperCase();
+					};
+
 					if (spectlect in spect)
 					{
 						coll = spect[spectlect];
 					}
 					else
 					{
+
 						coll = [0,255,0];
 						console.log(s["spect"]);
+						console.log(spectlect);
 					}
 
 					colours[sid*3] = coll[0]/255.0;
@@ -248,6 +266,29 @@
 			var circle = new THREE.Line(circleG,circleM);
 			scene.add(circle);
 
+
+			//equator
+			var eqG = new THREE.Geometry();
+			var eqR = 0.5;
+			for (var i=0; i<2*Math.PI; i+= 0.1)
+			{
+			  eqG.vertices.push(new THREE.Vector3(eqR * Math.cos(i), 0, eqR * Math.sin(i)));
+			}
+			eqG.vertices.push(new THREE.Vector3(eqR,0,0));
+			var eqM = new THREE.LineBasicMaterial( { color: 0x5555ff, linewidth:3 });
+			var equator = new THREE.Line(eqG,eqM);
+			equator.rotation.x -= ecliptic_inclination;
+			scene.add(equator);
+
+			var npG = new THREE.Geometry();
+			npG.vertices.push(new THREE.Vector3(0,0.2,0));
+			npG.vertices.push(new THREE.Vector3(0,0.7,0));
+			var northpole = new THREE.Line(npG,eqM);
+			scene.add(northpole);
+			
+
+
+			//camera
 			camera.position.z = 5;
 			camera.position.y = 2;
 
@@ -258,14 +299,14 @@
 
 			var cangle = 0;
 
+			var time = 0.0;
+
+			var vec0 = new THREE.Vector3(0,0,0);
+
 			var render = function () {
 				var delta = clock.getDelta();
 				requestAnimationFrame( render );
 
-				cangle += 0.002;
-				//camera.position.z = 5 * (1+Math.cos(cangle)) * Math.cos(cangle);
-				//camera.position.x = 5 * Math.sin(cangle);
-				//camera.lookAt(new THREE.Vector3(0,0,0));
 				controls.update(delta);
 
 				for (lid in labels)
@@ -274,10 +315,25 @@
 					var dist = l.position.distanceTo(camera.position);
 					var scale = Math.max(1.0,dist)*0.06;
 					l.scale.set(scale,scale,scale);
+					l.scale.setX(l.scale.x * l.tr);
 				};
-
-
+				
 				renderer.render(scene, camera);
+
+
+
+				//physics
+				var M = new THREE.Matrix4();
+				M.makeRotationX(-ecliptic_inclination);
+				var M2 = new THREE.Matrix4();
+				M2.makeRotationY(time / 26000.0);
+				M2.multiply(M);
+
+				equator.rotation.setFromRotationMatrix(M2);
+				northpole.rotation.setFromRotationMatrix(M2);
+
+
+     				time += 100.0;
 			};
 
 			render();
